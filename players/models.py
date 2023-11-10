@@ -3,7 +3,7 @@ import uuid
 
 class Player(models.Model):
   id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-  nhl_api_id = models.IntegerField()
+  nhl_api_id = models.IntegerField(unique=True)
   first_name = models.CharField(max_length=255)
   last_name = models.CharField(max_length=255)
   is_active = models.BooleanField()

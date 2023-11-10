@@ -26,6 +26,9 @@ def query_all_games(request):
           response = requests.get(url)
           if response.status_code == 404:
             continue
+          game_data = response.json()
+          for player in game_data["rosterSpots"]:
+            create_player(player["playerId"])
           games.append(response.json())
 
       while game_number <= 1353:
