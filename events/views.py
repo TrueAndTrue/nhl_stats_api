@@ -1,6 +1,7 @@
 from django.http import HttpResponse, HttpRequest, JsonResponse
 from events.models import Goal, Shot, Hit, Faceoff, Penalty, MissedShot, BlockedShot, Giveaway, Stop, Challenge
 import requests
+from players.views import create_player
 
 def index(request):
   return HttpResponse("Hello, world. You're at the events index.")
