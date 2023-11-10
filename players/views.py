@@ -36,6 +36,14 @@ def create_player(player_id):
   url = base_url + str(player_id)+ "/landing"
   response = requests.get(url)
   player = response.json()
+  player_existing = None
+  try:
+    player_existing = Player.objects.get(nhl_api_id=player_id)
+  except Player.DoesNotExist:
+    player_existing = None
+  if player_existing:
+    json_data = PlayerEncoder().encode(player_existing)
+    return JsonResponse({'player_data': json_data}, safe=False)
   curated_player = LargeObject(**player)
   created_player = Player.objects.create(
     nhl_api_id = curated_player.nhl_api_id,
