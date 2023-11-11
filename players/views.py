@@ -22,7 +22,7 @@ class LargeObject:
         last_name = kwargs.get('lastName', {})
         self.last_name = last_name.get('default', 'Default Last Name')
         self.is_active = kwargs.get('isActive', False)
-        self.jersey_number = kwargs.get('jerseyNumber', -1)
+        self.jersey_number = kwargs.get('sweaterNumber', -1)
         self.primary_position = kwargs.get('position', 'Default Position')
         self.headshot = kwargs.get('headshot', 'Default Headshot URL')
         self.hero_image = kwargs.get('heroImage', 'Default Hero Image URL')
@@ -31,12 +31,6 @@ class LargeObject:
         self.weight_in_lbs = kwargs.get('weightInPounds', -1)
 
 def create_player(player_id):
-  print("request to create player" + str(player_id))
-  base_url = "https://api-web.nhle.com/v1/player/"
-  url = base_url + str(player_id)+ "/landing"
-  response = requests.get(url)
-  player = response.json()
-  player_existing = None
   try:
     player_existing = Player.objects.get(nhl_api_id=player_id)
   except Player.DoesNotExist:
@@ -44,6 +38,16 @@ def create_player(player_id):
   if player_existing:
     json_data = PlayerEncoder().encode(player_existing)
     return JsonResponse({'player_data': json_data}, safe=False)
+  base_url = "https://api-web.nhle.com/v1/player/"
+  url = base_url + str(player_id)+ "/landing"
+  try:
+    response = requests.get(url)
+    if response.status_code == 404:
+      return JsonResponse({'player_data': None}, safe=False)
+  except:
+    print("ERROR")
+  player = response.json()
+  player_existing = None
   curated_player = LargeObject(**player)
   created_player = Player.objects.create(
     nhl_api_id = curated_player.nhl_api_id,
