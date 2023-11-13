@@ -1,7 +1,7 @@
 from django.http import HttpResponse, HttpRequest, JsonResponse
 import requests
 from players.views import create_player
-from events.helpers import faceoff_handler, hit_handler, goal_handler, shot_handler, giveaway_handler, missed_shot_handler, blocked_shot_handler, penalty_handler
+from events.helpers import FaceoffHandler, HitHandler, GoalHandler, ShotHandler, GiveawayHandler, MissedShotHandler, BlockedShotHandler, PenaltyHandler
 
 def index(request):
   return HttpResponse("Hello, world. You're at the events index.")
@@ -10,7 +10,7 @@ def query_all_games(request):
 
   # VARS
   QUERY_TYPE = "event"  # player / event / game
-  FIRST_SEASON = 1917
+  FIRST_SEASON = 2023
   LAST_SEASON = 2023
   REGULAR_SEASON = 2
   PLAYOFFS = 3
@@ -24,11 +24,12 @@ def query_all_games(request):
     game_type = REGULAR_SEASON
     while game_type <= PLAYOFFS:
       game_number = 1
-
+      # add preseason
       # PLAYOFF LOGIC
       if game_type == PLAYOFFS:
         playoff_games = playoff_game_number_generator()
         for game in playoff_games:
+          print(game, "playoffs")
           url = base_url + str(season) + "0" + str(game_type) + game + "/play-by-play"
           try:
             response = requests.get(url)
@@ -41,9 +42,30 @@ def query_all_games(request):
             for player in game_data["rosterSpots"]:
               create_player(player["playerId"])
 
+          elif QUERY_TYPE == "event":
+            for play in game_data["plays"]:
+              if play["typeDescKey"] == "faceoff":
+                FaceoffHandler(play, game_id, "playoff").create_event()
+              elif play["typeDescKey"] == "hit":
+                HitHandler(play, game_id, "playoff").create_event()
+              elif play["typeDescKey"] == "shot-on-goal":
+                ShotHandler(play, game_id, "playoff").create_event()
+              elif play["typeDescKey"] == "giveaway":
+                GiveawayHandler(play, game_id, "playoff").create_event()
+              elif play["typeDescKey"] == "missed-shot":
+                MissedShotHandler(play, game_id, "playoff").create_event()
+              elif play["typeDescKey"] == "blocked-shot":
+                BlockedShotHandler(play, game_id, "playoff").create_event()
+              elif play["typeDescKey"] == "penalty":
+                PenaltyHandler(play, game_id, "playoff").create_event()
+              elif play["typeDescKey"] == "goal":
+                GoalHandler(play, game_id, "playoff").create_event()
+              else:
+                continue
+
       # REGULAR SEASON LOGIC
       while game_number <= 1353:
-        print(game_number)
+        print(game_number, "regular")
         game_id = str(season) + "0" + str(game_type) + game_number_formatter(game_number)
         url = base_url + game_id + "/play-by-play"
         try:
@@ -63,21 +85,21 @@ def query_all_games(request):
         elif QUERY_TYPE == "event":
           for play in game_data["plays"]:
             if play["typeDescKey"] == "faceoff":
-              faceoff_handler(play, game_id, "regular")
+              FaceoffHandler(play, game_id, "regular").create_event()
             elif play["typeDescKey"] == "hit":
-              hit_handler(play, game_id, "regular")
+              HitHandler(play, game_id, "regular").create_event()
             elif play["typeDescKey"] == "shot-on-goal":
-              shot_handler(play, game_id, "regular")
+              ShotHandler(play, game_id, "regular").create_event()
             elif play["typeDescKey"] == "giveaway":
-              giveaway_handler(play, game_id, "regular")
+              GiveawayHandler(play, game_id, "regular").create_event()
             elif play["typeDescKey"] == "missed-shot":
-              missed_shot_handler(play, game_id, "regular")
+              MissedShotHandler(play, game_id, "regular").create_event()
             elif play["typeDescKey"] == "blocked-shot":
-              blocked_shot_handler(play, game_id, "regular")
+              BlockedShotHandler(play, game_id, "regular").create_event()
             elif play["typeDescKey"] == "penalty":
-              penalty_handler(play, game_id, "regular")
+              PenaltyHandler(play, game_id, "regular").create_event()
             elif play["typeDescKey"] == "goal":
-              goal_handler(play, game_id, "regular")
+              GoalHandler(play, game_id, "regular").create_event()
             else:
               continue
         game_number += 1

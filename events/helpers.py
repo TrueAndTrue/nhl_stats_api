@@ -1,135 +1,164 @@
 from events.models import Goal, Shot, Hit, Faceoff, Penalty, MissedShot, BlockedShot, Giveaway
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import JsonResponse
+from datetime import datetime, time
+
+
+class BaseHandler:
+    model_class = None
+
+    def __init__(self, data, game_id, season_type):
+        self.data = data
+        self.game_id = game_id
+        self.season_type = season_type
+
+    def create_event(self):
+        
+        for letter in self.data["timeInPeriod"]:
+          if letter.isalpha():
+            self.data["timeInPeriod"] = "00:00"    
+        minutesTime = int(self.data["timeInPeriod"].split(":")[0])
+        secondsTime = int(self.data["timeInPeriod"].split(":")[1])
+        if minutesTime > 20:
+          self.data["timeInPeriod"] = "00:00"
+        elif secondsTime > 60:
+          self.data["timeInPeriod"] = "00:00"
+        time_in_period = datetime.strptime(self.data.get("timeInPeriod"), "%H:%M").time() if self.data.get("timeInPeriod") else None
+        
+        print(str(self.game_id) + str(self.data["eventId"]))
+        
+        try:
+          data_existing = self.model_class.objects.get(event_id=str(self.game_id) + str(self.data["eventId"]))
+        except self.model_class.DoesNotExist:
+          data_existing = None
+        if data_existing:
+          print('dup')
+          return JsonResponse({'event_data': {}}, safe=False)
+
+        additional_fields = self.get_additional_fields()
+        event_instance = self.model_class.objects.create(
+            period=self.data.get("period"),
+            period_time=time_in_period,
+            season_type=self.season_type,
+            coord_x=self.data["details"].get("xCoord"),
+            coord_y=self.data["details"].get("yCoord"),
+            game_id=self.game_id,
+            event_id = str(self.game_id) + str(self.data["eventId"]),
+            **additional_fields
+        )
+        json_data = JsonEncoder().encode(event_instance)
+        return JsonResponse({'event_data': json_data}, safe=False)
+
+    def get_additional_fields(self):
+        raise NotImplementedError("Subclasses must implement this method.")
+
 
 class JsonEncoder(DjangoJSONEncoder):
     def default(self, obj):
-        return {'nhl_api_id': obj.nhl_api_id }
+        return {'game_id': obj.game_id }
 
-def faceoff_handler(faceoff_data, game_id, season_type):
-  faceoff = Faceoff.objects.create(
-    winner = faceoff_data["details"]["winningPlayerId"],
-    loser = faceoff_data["details"]["losingPlayerId"],
-    period = faceoff_data["period"],
-    period_time = faceoff_data["timeInPeriod"],
-    season_type = season_type,
-    coord_x = faceoff_data["details"]["xCoord"],
-    coord_y = faceoff_data["details"]["yCoord"],
-    game_id = game_id
-  )
-  json_data = JsonEncoder().encode(faceoff)
-  print(json_data, "JSON DATA")
-  return JsonResponse({'event_data': json_data}, safe=False)
+class FaceoffHandler(BaseHandler):
 
-def hit_handler(hit_data, game_id, season_type):
-  hit = Hit.objects.create(
-    hitter = hit_data["details"]["hittingPlayerId"],
-    hittee = hit_data["details"]["hitteePlayerId"],
-    period = hit_data["period"],
-    period_time = hit_data["timeInPeriod"],
-    season_type = season_type,
-    coord_x = hit_data["details"]["xCoord"],
-    coord_y = hit_data["details"]["yCoord"],
-    game_id = game_id
-  )
-  json_data = JsonEncoder().encode(hit)
-  print(json_data, "JSON DATA")
-  return JsonResponse({'event_data': json_data}, safe=False)
+  model_class = Faceoff
 
-def goal_handler(goal_data, game_id, season_type):
-  goal = Goal.objects.create(
-    scorer = goal_data["details"]["scoringPlayerId"],
-    assist = goal_data["details"]["assist1PlayerId"],
-    assist2 = goal_data["details"]["assist2PlayerId"],
-    goalie = goal_data["details"]["goalieInNetId"],
-    shot_type = goal_data["details"]["shotType"],
-    period = goal_data["period"],
-    period_time = goal_data["timeInPeriod"],
-    season_type = season_type,
-    coord_x = goal_data["details"]["xCoord"],
-    coord_y = goal_data["details"]["yCoord"],
-    game_id = game_id
-  )
-  json_data = JsonEncoder().encode(goal)
-  print(json_data, "JSON DATA")
-  return JsonResponse({'event_data': json_data}, safe=False)
+  def get_additional_fields(self):
+    return {
+      'winner': self.data["details"].get("winningPlayerId"),
+      'loser': self.data["details"].get("losingPlayerId"),
+    }
 
-def shot_handler(shot_data, game_id, season_type):
-  shot = Shot.objects.create(
-    shooter = shot_data["details"]["shootingPlayerId"],
-    goalie = shot_data["details"]["goalieInNetId"],
-    shot_type = shot_data["details"]["shotType"],
-    period = shot_data["period"],
-    period_time = shot_data["timeInPeriod"],
-    season_type = season_type,
-    coord_x = shot_data["details"]["xCoord"],
-    coord_y = shot_data["details"]["yCoord"],
-    game_id = game_id
-  )
-  json_data = JsonEncoder().encode(shot)
-  print(json_data, "JSON DATA")
-  return JsonResponse({'event_data': json_data}, safe=False)
+class HitHandler(BaseHandler):
+  
+  model_class = Hit
 
-def giveaway_handler(giveaway_data, game_id, season_type):
-  giveaway = Giveaway.objects.create(
-    player = giveaway_data["details"]["playerId"],
-    period = giveaway_data["period"],
-    period_time = giveaway_data["timeInPeriod"],
-    season_type = season_type,
-    coord_x = giveaway_data["details"]["xCoord"],
-    coord_y = giveaway_data["details"]["yCoord"],
-    game_id = game_id
-  )
-  json_data = JsonEncoder().encode(giveaway)
-  print(json_data, "JSON DATA")
-  return JsonResponse({'event_data': json_data}, safe=False)
+  def get_additional_fields(self):
+    return {
+      'hitter': self.data["details"].get("hittingPlayerId"),
+      'hittee': self.data["details"].get("hitteePlayerId"),
+    }
 
-def missed_shot_handler(missed_shot_data, game_id, season_type):
-  missed_shot = MissedShot.objects.create(
-    shooter = missed_shot_data["details"]["shootingPlayerId"],
-    goalie = missed_shot_data["details"]["goalieInNetId"],
-    shot_type = missed_shot_data["details"]["shotType"],
-    reason = missed_shot_data["details"]["reason"],
-    period = missed_shot_data["period"],
-    period_time = missed_shot_data["timeInPeriod"],
-    season_type = season_type,
-    coord_x = missed_shot_data["details"]["xCoord"],
-    coord_y = missed_shot_data["details"]["yCoord"],
-    game_id = game_id
-  )
-  json_data = JsonEncoder().encode(missed_shot)
-  print(json_data, "JSON DATA")
-  return JsonResponse({'event_data': json_data}, safe=False)
 
-def blocked_shot_handler(blocked_shot_data, game_id, season_type):
-  blocked_shot = BlockedShot.objects.create(
-    blocker = blocked_shot_data["details"]["blockingPlayerId"],
-    shooter = blocked_shot_data["details"]["shootingPlayerId"],
-    period = blocked_shot_data["period"],
-    period_time = blocked_shot_data["timeInPeriod"],
-    season_type = season_type,
-    coord_x = blocked_shot_data["details"]["xCoord"],
-    coord_y = blocked_shot_data["details"]["yCoord"],
-    game_id = game_id
-  )
-  json_data = JsonEncoder().encode(blocked_shot)
-  print(json_data, "JSON DATA")
-  return JsonResponse({'event_data': json_data}, safe=False)
+class GoalHandler(BaseHandler):
 
-def penalty_handler(penalty_data, game_id, season_type):
-  penalty = Penalty.objects.create(
-    penalty_on = penalty_data["details"]["committedByPlayerId"],
-    drew_by = penalty_data["details"]["drawnByPlayerId"],
-    penalty_type = penalty_data["details"]["descKey"],
-    minutes = penalty_data["details"]["duration"],
-    period = penalty_data["period"],
-    period_time = penalty_data["timeInPeriod"],
-    season_type = season_type,
-    coord_x = penalty_data["details"]["xCoord"],
-    coord_y = penalty_data["details"]["yCoord"],
-    game_id = game_id
-  )
-  json_data = JsonEncoder().encode(penalty)
-  print(json_data, "JSON DATA")
-  return JsonResponse({'event_data': json_data}, safe=False)
+  model_class = Goal
 
+  def get_additional_fields(self):
+    return {
+      'scorer': self.data["details"].get("scoringPlayerId"),
+      'assist': self.data["details"].get("assist1PlayerId"),
+      'assist2': self.data["details"].get("assist2PlayerId"),
+      'goalie': self.data["details"].get("goalieInNetId"),
+      'shot_type': self.data["details"].get("shotType"),
+    }
+
+class ShotHandler(BaseHandler):
+
+  model_class = Shot
+
+  def get_additional_fields(self):
+    return {
+      'shooter': self.data["details"].get("shootingPlayerId"),
+      'goalie': self.data["details"].get("goalieInNetId"),
+      'shot_type': self.data["details"].get("shotType"),
+    }
+
+class GiveawayHandler(BaseHandler):
+
+  model_class = Giveaway
+
+  def get_additional_fields(self):
+    return {
+      'player': self.data["details"].get("playerId"),
+    }
+
+class MissedShotHandler(BaseHandler):
+
+  model_class = MissedShot
+
+  def get_additional_fields(self):
+    return {
+      'shooter': self.data["details"].get("shootingPlayerId"),
+      'goalie': self.data["details"].get("goalieInNetId"),
+      'reason': self.data["details"].get("reason"),
+    }
+
+class BlockedShotHandler(BaseHandler):
+
+  model_class = BlockedShot
+
+  def get_additional_fields(self):
+    return {
+      'blocker': self.data["details"].get("blockingPlayerId"),
+      'shooter': self.data["details"].get("shootingPlayerId"),
+    }
+
+class PenaltyHandler(BaseHandler):
+
+  model_class = Penalty
+
+  def get_additional_fields(self):
+    return {
+      'penalty_on': self.data["details"].get("committedByPlayerId"),
+      'drew_by': self.data["details"].get("drawnByPlayerId"),
+      'penalty_type': self.data["details"].get("descKey"),
+      'minutes': self.data["details"].get("duration"),
+    }
+
+def handle_event(event_type, data, game_id, season_type):
+    handler_classes = {
+        "faceoff": FaceoffHandler,
+        "hit": HitHandler,
+        "goal": GoalHandler,
+        "shot-on-goal": ShotHandler,
+        "giveaway": GiveawayHandler,
+        "missed-shot": MissedShotHandler,
+        "blocked-shot": BlockedShotHandler,
+        "penalty": PenaltyHandler,
+    }
+
+    handler_class = handler_classes.get(event_type)
+    if handler_class:
+        handler = handler_class(data, game_id, season_type)
+        return handler.create_event()
+    else:
+        return JsonResponse({'error': 'Invalid event type'}, status=400)

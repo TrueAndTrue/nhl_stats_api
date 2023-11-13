@@ -2,6 +2,8 @@ from django.http import JsonResponse, HttpResponse
 from players.models import Player
 from django.core.serializers.json import DjangoJSONEncoder
 import requests
+from django.forms.models import model_to_dict
+from events.models import Goal, Shot, Hit, Faceoff, Penalty, MissedShot, BlockedShot, Giveaway
 
 def index(request):
   players = Player.objects.all()
@@ -64,3 +66,176 @@ def create_player(player_id):
   )
   json_data = PlayerEncoder().encode(created_player)
   return JsonResponse({'player_data': json_data}, safe=False)
+
+def sort_key(data, key='game_id'):
+    return str(data[key])[:4]
+
+def find_player(request):
+  player_id = request.GET.get('playerId')
+  try:
+    player = Player.objects.get(nhl_api_id=player_id)
+  except Player.DoesNotExist:
+    player = None
+  if player:
+    print(player)
+    player_dict = model_to_dict(player)
+    return JsonResponse({'player_data': player_dict}, safe=False)
+  else:
+    return JsonResponse({'player_data': None}, safe=False)
+
+def hit_player_finder(request):
+  player1 = request.GET.get('player1')
+  player2 = request.GET.get('player2')
+
+  if not player2:
+    data = Hit.objects.filter(hitter=player1)
+
+  else: 
+    data = Hit.objects.filter(hitter=player1, hittee=player2)
+    
+  data_list = list(data.values())
+  if len(data_list) == 0:
+    return JsonResponse({"data": []}, safe=False)
+  sorted_data_list = sorted(data_list, key=sort_key)
+  oldest_game = str(sorted_data_list[0]['game_id'])[:4]
+  newest_game = str(sorted_data_list[-1]['game_id'])[:4]
+  return JsonResponse({"oldestGame": oldest_game, "newestGame": newest_game, "amount": len(sorted_data_list),"data": sorted_data_list}, safe=False)
+
+def faceoff_player_finder(request):
+  player1 = request.GET.get('player1')
+  player2 = request.GET.get('player2')
+
+  if not player2:
+    data = Faceoff.objects.filter(winner=player1)
+
+  else: 
+    data = Faceoff.objects.filter(winner=player1, loser=player2)
+    
+  data_list = list(data.values())
+  if len(data_list) == 0:
+    return JsonResponse({"data": []}, safe=False)
+  sorted_data_list = sorted(data_list, key=sort_key)
+  oldest_game = str(sorted_data_list[0]['game_id'])[:4]
+  newest_game = str(sorted_data_list[-1]['game_id'])[:4]
+  return JsonResponse({"oldestGame": oldest_game, "newestGame": newest_game, "amount": len(sorted_data_list),"data": sorted_data_list}, safe=False)
+
+def shot_player_finder(request):
+  player1 = request.GET.get('player1')
+  player2 = request.GET.get('player2')
+
+  if not player2:
+    data = Shot.objects.filter(shooter=player1)
+
+  else: 
+    data = Shot.objects.filter(shooter=player1, goalie=player2)
+    
+  data_list = list(data.values())
+  if len(data_list) == 0:
+    return JsonResponse({"data": []}, safe=False)
+  sorted_data_list = sorted(data_list, key=sort_key)
+  oldest_game = str(sorted_data_list[0]['game_id'])[:4]
+  newest_game = str(sorted_data_list[-1]['game_id'])[:4]
+  return JsonResponse({"oldestGame": oldest_game, "newestGame": newest_game, "amount": len(sorted_data_list),"data": sorted_data_list}, safe=False)
+
+def goal_player_finder(player1, player2):
+  data = Goal.objects.filter(scorer=player1, goalie=player2)
+  print(data)
+  return data
+
+def penalty_player_finder(request):
+  player1 = request.GET.get('player1')
+  player2 = request.GET.get('player2')
+
+  if not player2:
+    data = Penalty.objects.filter(penalty_on=player1)
+
+  else: 
+    data = Penalty.objects.filter(penalty_on=player1, drew_by=player2)
+    
+  data_list = list(data.values())
+  if len(data_list) == 0:
+    return JsonResponse({"data": []}, safe=False)
+  sorted_data_list = sorted(data_list, key=sort_key)
+  oldest_game = str(sorted_data_list[0]['game_id'])[:4]
+  newest_game = str(sorted_data_list[-1]['game_id'])[:4]
+  return JsonResponse({"oldestGame": oldest_game, "newestGame": newest_game, "amount": len(sorted_data_list),"data": sorted_data_list}, safe=False)
+
+def missed_shot_player_finder(request):
+  player1 = request.GET.get('player1')
+  player2 = request.GET.get('player2')
+
+  if not player2:
+    data = MissedShot.objects.filter(shooter=player1)
+
+  else: 
+    data = MissedShot.objects.filter(shooter=player1, goalie=player2)
+    
+  data_list = list(data.values())
+  if len(data_list) == 0:
+    return JsonResponse({"data": []}, safe=False)
+  sorted_data_list = sorted(data_list, key=sort_key)
+  oldest_game = str(sorted_data_list[0]['game_id'])[:4]
+  newest_game = str(sorted_data_list[-1]['game_id'])[:4]
+  return JsonResponse({"oldestGame": oldest_game, "newestGame": newest_game, "amount": len(sorted_data_list),"data": sorted_data_list}, safe=False)
+
+def blocked_shot_player_finder(request):
+  player1 = request.GET.get('player1')
+  player2 = request.GET.get('player2')
+
+  if not player2:
+    data = BlockedShot.objects.filter(blocker=player1)
+
+  else: 
+    data = BlockedShot.objects.filter(blocker=player1, shooter=player2)
+    
+  data_list = list(data.values())
+  if len(data_list) == 0:
+    return JsonResponse({"data": []}, safe=False)
+  sorted_data_list = sorted(data_list, key=sort_key)
+  oldest_game = str(sorted_data_list[0]['game_id'])[:4]
+  newest_game = str(sorted_data_list[-1]['game_id'])[:4]
+  return JsonResponse({"oldestGame": oldest_game, "newestGame": newest_game, "amount": len(sorted_data_list),"data": sorted_data_list}, safe=False)
+
+def giveaway_player_finder(request):
+  player = request.GET.get('player')
+
+  data = Giveaway.objects.filter(player=player)
+    
+  data_list = list(data.values())
+  if len(data_list) == 0:
+    return JsonResponse({"data": []}, safe=False)
+  sorted_data_list = sorted(data_list, key=sort_key)
+  oldest_game = str(sorted_data_list[0]['game_id'])[:4]
+  newest_game = str(sorted_data_list[-1]['game_id'])[:4]
+  return JsonResponse({"oldestGame": oldest_game, "newestGame": newest_game, "amount": len(sorted_data_list),"data": sorted_data_list}, safe=False)
+
+def player_sort_key(data, key='last_name'):
+    return str(data[key])
+
+def find_players_by_name(request):
+  name = request.GET.get('name')
+  names = name.split(" ")
+
+  if len(names) == 1:
+    first_name = names[0]
+    
+    try:
+      players = Player.objects.filter(first_name__startswith=first_name)
+      player_dicts = [model_to_dict(player) for player in players]
+      sorted_player_list = sorted(player_dicts, key=player_sort_key)
+      return JsonResponse({"amount": len(sorted_player_list), "players": list(sorted_player_list)}, safe=False)
+    except Player.DoesNotExist:
+      players = None
+  else:
+    first_name = names[0]
+    last_name = names[1]
+  try:
+    players = Player.objects.filter(first_name__startswith=first_name)
+    players2 = players.filter(last_name__startswith=last_name)
+    player_dicts = [model_to_dict(player) for player in players2]
+    sorted_player_list = sorted(player_dicts, key=player_sort_key)
+    return JsonResponse({"amount": len(sorted_player_list),"players": list(sorted_player_list)}, safe=False)
+  except Player.DoesNotExist:
+    players2 = None
+
+  return players2
