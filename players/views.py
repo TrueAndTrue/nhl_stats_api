@@ -6,9 +6,8 @@ from django.forms.models import model_to_dict
 from events.models import Goal, Shot, Hit, Faceoff, Penalty, MissedShot, BlockedShot, Giveaway
 
 def index(request):
-  players = Player.objects.all()
-  print(players, "PLAYERS")
-  return HttpResponse(players)
+  print(request.body)
+  return HttpResponse(request.body)
 
 class PlayerEncoder(DjangoJSONEncoder):
     def default(self, obj):
@@ -82,6 +81,101 @@ def find_player(request):
     return JsonResponse({'player_data': player_dict}, safe=False)
   else:
     return JsonResponse({'player_data': None}, safe=False)
+  
+def player_comparison_goal_handler(goalList):
+
+  if (len(goalList) == 0):
+    return {"most_common_shot_type": None, "goal_count": 0, "most_common_period": None}
+  goal_shot_type_map = {}
+  goal_period_map = {}
+  goal_count = 0
+  
+  for goal in goalList:
+    goal_shot_type_map[goal["shot_type"]] = goal_shot_type_map.get(goal["shot_type"], 0) + 1
+    goal_period_map[goal["period"]] = goal_period_map.get(goal["period"], 0) + 1
+    goal_count += 1
+
+  sorted_shot_type_dict = dict(sorted(goal_shot_type_map.items(), key=lambda item: item[1], reverse=True))
+  sorted_period_dict = dict(sorted(goal_period_map.items(), key=lambda item: item[1], reverse=True))
+
+
+  print(goal_shot_type_map)
+  print(goal_period_map)
+  print(goal_count)
+
+
+  most_common_shot_type = list(sorted_shot_type_dict.keys())[0]
+  if list(sorted_shot_type_dict.keys())[0] == None:
+    most_common_shot_type = list(sorted_shot_type_dict.keys())[1]
+  most_common_period = list(sorted_period_dict.keys())[0]
+
+  return {"most_common_shot_type": most_common_shot_type, "goal_count": goal_count, "most_common_period": most_common_period}
+
+def player_comparison(request):
+  player1 = request.GET.get('player1')
+  player2 = request.GET.get('player2')
+
+  if not player1 or not player2:
+    return JsonResponse({"data": []}, safe=False)
+  
+  player_1_goals = player_comparison_goal_handler(list(Goal.objects.filter(scorer=player1).values()))
+  print(player_1_goals)
+  player_1_hits = len(list(Hit.objects.filter(hitter=player1).values()))
+  player_1_hittees = len(list(Hit.objects.filter(hittee=player1).values()))
+  player_1_faceoff_wins = len(list(Faceoff.objects.filter(winner=player1).values()))
+  player_1_faceoff_losses = len(list(Faceoff.objects.filter(loser=player1).values()))
+  player_1_shots = len(list(Shot.objects.filter(shooter=player1).values()))
+  player_1_penalties = len(list(Penalty.objects.filter(penalty_on=player1).values()))
+  player_1_penalties_drawn = len(list(Penalty.objects.filter(drew_by=player1).values()))
+  player_1_missed_shots = len(list(MissedShot.objects.filter(shooter=player1).values()))
+  player_1_blocked_shots = len(list(BlockedShot.objects.filter(blocker=player1).values()))
+  player_1_giveaways = len(list(Giveaway.objects.filter(player=player1).values()))
+  
+  player_2_goals = player_comparison_goal_handler(list(Goal.objects.filter(scorer=player2).values()))
+  player_2_hits = len(list(Hit.objects.filter(hitter=player2).values()))
+  player_2_hittees = len(list(Hit.objects.filter(hittee=player2).values()))
+  player_2_faceoff_wins = len(list(Faceoff.objects.filter(winner=player2).values()))
+  player_2_faceoff_losses = len(list(Faceoff.objects.filter(loser=player2).values()))
+  player_2_shots = len(list(Shot.objects.filter(shooter=player2).values()))
+  player_2_penalties = len(list(Penalty.objects.filter(penalty_on=player2).values()))
+  player_2_penalties_drawn = len(list(Penalty.objects.filter(drew_by=player2).values()))
+  player_2_missed_shots = len(list(MissedShot.objects.filter(shooter=player2).values()))
+  player_2_blocked_shots = len(list(BlockedShot.objects.filter(blocker=player2).values()))
+  player_2_giveaways = len(list(Giveaway.objects.filter(player=player2).values()))
+
+  player1Stats = {
+    "goal_count": player_1_goals["goal_count"],
+    "most_common_shot_type": player_1_goals["most_common_shot_type"],
+    "most_common_period": player_1_goals["most_common_period"],
+    "hits": player_1_hits,
+    "hittees": player_1_hittees,
+    "faceoff_wins": player_1_faceoff_wins,
+    "faceoff_losses": player_1_faceoff_losses,
+    "shots": player_1_shots,
+    "penalties": player_1_penalties,
+    "penalties_drawn": player_1_penalties_drawn,
+    "missed_shots": player_1_missed_shots,
+    "blocked_shots": player_1_blocked_shots,
+    "giveaways": player_1_giveaways
+  }
+
+  player2Stats = {
+    "goal_count": player_2_goals["goal_count"],
+    "most_common_shot_type": player_2_goals["most_common_shot_type"],
+    "most_common_period": player_2_goals["most_common_period"],
+    "hits": player_2_hits,
+    "hittees": player_2_hittees,
+    "faceoff_wins": player_2_faceoff_wins,
+    "faceoff_losses": player_2_faceoff_losses,
+    "shots": player_2_shots,
+    "penalties": player_2_penalties,
+    "penalties_drawn": player_2_penalties_drawn,
+    "missed_shots": player_2_missed_shots,
+    "blocked_shots": player_2_blocked_shots,
+    "giveaways": player_2_giveaways
+  }
+
+  return JsonResponse({"player1": player1Stats, "player2": player2Stats}, safe=False)
 
 def hit_player_finder(request):
   player1 = request.GET.get('player1')
@@ -214,7 +308,12 @@ def player_sort_key(data, key='last_name'):
 
 def find_players_by_name(request):
   name = request.GET.get('name')
+  if (not name):
+    return JsonResponse({"amount": 0, "players": []}, safe=False)
   names = name.split(" ")
+
+  for i in range(len(names)):
+    names[i] = names[i][0].upper() + names[i][1:].lower()
 
   if len(names) == 1:
     first_name = names[0]
@@ -223,6 +322,11 @@ def find_players_by_name(request):
       players = Player.objects.filter(first_name__startswith=first_name)
       player_dicts = [model_to_dict(player) for player in players]
       sorted_player_list = sorted(player_dicts, key=player_sort_key)
+      if len(sorted_player_list) < 5:
+        players_by_last = Player.objects.filter(last_name__startswith=first_name)
+        player_dicts_by_last = [model_to_dict(player) for player in players_by_last]
+        sorted_player_list_by_last = sorted(player_dicts_by_last, key=player_sort_key)
+        return JsonResponse({"amount": len(sorted_player_list + sorted_player_list_by_last),"players": list(sorted_player_list + sorted_player_list_by_last)}, safe=False)
       return JsonResponse({"amount": len(sorted_player_list), "players": list(sorted_player_list)}, safe=False)
     except Player.DoesNotExist:
       players = None
@@ -234,6 +338,12 @@ def find_players_by_name(request):
     players2 = players.filter(last_name__startswith=last_name)
     player_dicts = [model_to_dict(player) for player in players2]
     sorted_player_list = sorted(player_dicts, key=player_sort_key)
+    if len(sorted_player_list) < 5:
+      players_by_last = Player.objects.filter(last_name__startswith=first_name)
+      players_by_last_2 = players_by_last.filter(first_name__startswith=last_name)
+      player_dicts_by_last = [model_to_dict(player) for player in players_by_last_2]
+      sorted_player_list_by_last = sorted(player_dicts_by_last, key=player_sort_key)
+      return JsonResponse({"amount": len(sorted_player_list + sorted_player_list_by_last),"players": list(sorted_player_list + sorted_player_list_by_last)}, safe=False)
     return JsonResponse({"amount": len(sorted_player_list),"players": list(sorted_player_list)}, safe=False)
   except Player.DoesNotExist:
     players2 = None

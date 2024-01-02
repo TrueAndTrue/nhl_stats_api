@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+  path("player-comparison/", views.player_comparison, name="player_comparison"),
   path("find-players-by-name/", views.find_players_by_name, name="find-players-by-name"),
   path("find-player", views.find_player, name="find_player"),
   path("faceoff-player-finder", views.faceoff_player_finder, name="faceoff_player_finder"),
