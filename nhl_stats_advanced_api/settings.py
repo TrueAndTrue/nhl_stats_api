@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-et-o@ni6c8z)lr-8e7g0*e5&g*pktx5gmsjq92=d!^mbsnae9_"
 
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+ALLOWED_HOSTS = ['https://nhl-api-432a2e042059.herokuapp.com/', 'nhl-api-432a2e042059.herokuapp.com']
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
