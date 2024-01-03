@@ -27,6 +27,7 @@ ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "https://speeding-space-329167.postman.co/",
     # Add more allowed origins as needed
 ]
 
