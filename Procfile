@@ -1,1 +1,1 @@
-web: py manage.py runserver
+web: gunicorn nhl_stats_advanced_api.wsgi:application
