@@ -30,7 +30,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "https://speeding-space-329167.postman.co/",
     "http://speeding-space-329167.postman.co/",
-
+    "https://nhl-stats-4dprnvvjj-austin-westburys-projects.vercel.app/*"
     # Add more allowed origins as needed
 ]
 
