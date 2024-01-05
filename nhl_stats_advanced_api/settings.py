@@ -11,7 +11,10 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 import dj_database_url
 import os
+from dotenv import load_dotenv
 from pathlib import Path
+
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,13 +27,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-et-o@ni6c8z)lr-8e7g0*e5&g*pktx5gmsjq92=d!^mbsnae9_"
 
 
-ALLOWED_HOSTS = ['https://nhl-api-432a2e042059.herokuapp.com/', 'nhl-api-432a2e042059.herokuapp.com']
+ALLOWED_HOSTS = ['https://nhl-api-432a2e042059.herokuapp.com/', 'nhl-api-432a2e042059.herokuapp.com', "127.0.0.1"]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    "https://speeding-space-329167.postman.co/",
-    "http://speeding-space-329167.postman.co/",
-    "https://nhl-stats-4dprnvvjj-austin-westburys-projects.vercel.app/*"
+    "https://speeding-space-329167.postman.co",
+    "http://speeding-space-329167.postman.co",
+    "https://nhl-stats.vercel.app*"
     # Add more allowed origins as needed
 ]
 
