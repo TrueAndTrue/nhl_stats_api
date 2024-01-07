@@ -3,6 +3,9 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+  path("player-versus-goalie/", views.player_versus_goalie, name="player_versus_goalie"),
+  path("player-versus-player/", views.player_versus_player, name="player_versus_player"),
+  path("player-comparison-goalie/", views.player_comparison_goalie, name="player_comparison_goalie"),
   path("player-comparison/", views.player_comparison, name="player_comparison"),
   path("find-players-by-name/", views.find_players_by_name, name="find-players-by-name"),
   path("find-player", views.find_player, name="find_player"),

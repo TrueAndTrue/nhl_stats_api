@@ -177,6 +177,74 @@ def player_comparison(request):
 
   return JsonResponse({"player1": player1Stats, "player2": player2Stats}, safe=False)
 
+def player_comparison_goalie(request): 
+  player1 = request.GET.get('player1')
+  player2 = request.GET.get('player2')
+
+  if not player1 or not player2:
+    return JsonResponse({"data": []}, safe=False)
+  
+  player_1_goals_allowed = len(list(Goal.objects.filter(goalie=player1).values()))
+  player_1_shots_against = len(list(Shot.objects.filter(goalie=player1).values()))
+  player_1_save_percentage = round(1 - (player_1_goals_allowed / player_1_shots_against), 3)
+  player_1_penalties = len(list(Penalty.objects.filter(penalty_on=player1).values()))
+  player_1_penalties_drawn = len(list(Penalty.objects.filter(drew_by=player1).values()))
+
+  player_2_goals_allowed = len(list(Goal.objects.filter(goalie=player2).values()))
+  player_2_shots_against = len(list(Shot.objects.filter(goalie=player2).values()))
+  player_2_save_percentage = round(1 - (player_2_goals_allowed / player_2_shots_against), 3)
+  player_2_penalties = len(list(Penalty.objects.filter(penalty_on=player2).values()))
+  player_2_penalties_drawn = len(list(Penalty.objects.filter(drew_by=player2).values()))
+
+
+  player1Stats = {
+    "goals_allowed": player_1_goals_allowed,
+    "shots_against": player_1_shots_against,
+    "save_percentage": player_1_save_percentage,
+    "penalties": player_1_penalties,
+    "penalties_drawn": player_1_penalties_drawn
+  }
+
+  player2Stats = {
+    "goals_allowed": player_2_goals_allowed,
+    "shots_against": player_2_shots_against,
+    "save_percentage": player_2_save_percentage,
+    "penalties": player_2_penalties,
+    "penalties_drawn": player_2_penalties_drawn
+  }
+
+  return JsonResponse({"player1": player1Stats, "player2": player2Stats}, safe=False)
+
+def player_versus_player(request):
+  player1 = request.GET.get('player1')
+  player2 = request.GET.get('player2')
+
+  if not player1 or not player2:
+    return JsonResponse({"data": []}, safe=False)
+  
+  hits = len(list(Hit.objects.filter(hitter=player1, hittee=player2).values()))
+  faceoff_wins = len(list(Faceoff.objects.filter(winner=player1, loser=player2).values()))
+  penalties = len(list(Penalty.objects.filter(penalty_on=player1, drew_by=player2).values()))
+  blocked_shots = len(list(BlockedShot.objects.filter(blocker=player1, shooter=player2).values()))
+
+  return JsonResponse({"hits": hits, "faceoff_wins": faceoff_wins, "penalties": penalties, "blocked_shots": blocked_shots}, safe=False)
+
+def player_versus_goalie(request):
+  player1 = request.GET.get('player1')
+  player2 = request.GET.get('player2')
+
+  if not player1 or not player2:
+    return JsonResponse({"data": []}, safe=False)
+  
+  goal_object = player_comparison_goal_handler(list(Goal.objects.filter(scorer=player1).values()))
+  shots = len(list(Shot.objects.filter(shooter=player1, goalie=player2).values()))
+  score_percentage = round(goal_object["goal_count"] / shots, 3)
+  penalties = len(list(Penalty.objects.filter(penalty_on=player1, drew_by=player2).values()))
+  missed_shots = len(list(MissedShot.objects.filter(shooter=player1, goalie=player2).values()))
+
+  return JsonResponse({"goals": goal_object["goal_count"], "shots": shots, "score_percentage": score_percentage, "most_common_shot_type": goal_object["most_common_shot_type"], "missed_shots": missed_shots, "penalties": penalties}, safe=False)
+
+
 def hit_player_finder(request):
   player1 = request.GET.get('player1')
   player2 = request.GET.get('player2')
