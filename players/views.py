@@ -105,8 +105,10 @@ def player_comparison_goal_handler(goalList):
 
 
   most_common_shot_type = list(sorted_shot_type_dict.keys())[0]
-  if list(sorted_shot_type_dict.keys())[0] == None:
-    most_common_shot_type = list(sorted_shot_type_dict.keys())[1]
+  for key in sorted_shot_type_dict.keys():
+    if key != None:
+      most_common_shot_type = key
+      break
   most_common_period = list(sorted_period_dict.keys())[0]
 
   return {"most_common_shot_type": most_common_shot_type, "goal_count": goal_count, "most_common_period": most_common_period}
