@@ -20,6 +20,8 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+SECRET_KEY=os.environ.get('DJANGO_SECRET_KEY')
+
 ALLOWED_HOSTS = ['https://nhl-api-432a2e042059.herokuapp.com/', 'nhl-api-432a2e042059.herokuapp.com', "127.0.0.1"]
 
 CORS_ALLOWED_ORIGINS = [
