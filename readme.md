@@ -1,19 +1,30 @@
+# NHL Stats API Backend
 
-
-
-
-# Start server
+# Spin up a local copy
 
 `$ py manage.py runserver`
 
+`$ pip install -r requirements.txt`
 
-# Model generation
+`$ python manage.py migrate`
 
-## To generate a migration
-`$ py manage.py makemigrations app_name`
+`$ python manage.py runserver`
 
-## To stage that migration
-`$ py manage.py sqlmigrate app_name migration_id`
+## Contributing
 
-## To apply the staged migrations
-`$ py manage.py migrate`
+Your contributions are welcome! Whether it's improving code, fixing bugs, or enhancing documentation.
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## Contact
+
+[Austin Westbury - LinkedIn](https://www.linkedin.com/in/austin-westbury/)
+
+## License
+
+This project is open-sourced under the MIT license.
+
