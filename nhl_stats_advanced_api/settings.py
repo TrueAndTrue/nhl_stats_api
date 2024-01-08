@@ -20,19 +20,10 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-et-o@ni6c8z)lr-8e7g0*e5&g*pktx5gmsjq92=d!^mbsnae9_"
-
-
 ALLOWED_HOSTS = ['https://nhl-api-432a2e042059.herokuapp.com/', 'nhl-api-432a2e042059.herokuapp.com', "127.0.0.1"]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    "https://speeding-space-329167.postman.co",
-    "http://speeding-space-329167.postman.co",
     "https://nhl-stats.vercel.app",
     "https://www.anhls.com",
     # Add more allowed origins as needed
@@ -62,7 +53,6 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-    #"django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
