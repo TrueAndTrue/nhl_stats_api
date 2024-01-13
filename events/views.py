@@ -24,7 +24,6 @@ def query_all_games(request):
     game_type = REGULAR_SEASON
     while game_type <= PLAYOFFS:
       game_number = 1
-      # add preseason
       # PLAYOFF LOGIC
       if game_type == PLAYOFFS:
         playoff_games = playoff_game_number_generator()

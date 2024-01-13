@@ -238,7 +238,7 @@ def player_versus_goalie(request):
   if not player1 or not player2:
     return JsonResponse({"data": []}, safe=False)
   
-  goal_object = player_comparison_goal_handler(list(Goal.objects.filter(scorer=player1).values()))
+  goal_object = player_comparison_goal_handler(list(Goal.objects.filter(scorer=player1, goalie=player2).values()))
   shots = len(list(Shot.objects.filter(shooter=player1, goalie=player2).values()))
   score_percentage = round(goal_object["goal_count"] / shots, 3)
   penalties = len(list(Penalty.objects.filter(penalty_on=player1, drew_by=player2).values()))
