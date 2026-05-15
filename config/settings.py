@@ -32,7 +32,7 @@ DEBUG = os.environ.get("DJANGO_DEBUG") == "1"
 # Hosts: comma-separated DJANGO_ALLOWED_HOSTS env var, plus the prod domain.
 # (URL forms like "https://example.com/" are NOT valid here — host names only.)
 ALLOWED_HOSTS = [
-    "nhl-api.herokuapp.com",
+    "nhl-api-432a2e042059.herokuapp.com",
     "127.0.0.1",
     "localhost",
 ]
