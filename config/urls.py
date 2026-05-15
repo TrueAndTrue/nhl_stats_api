@@ -1,5 +1,5 @@
 """
-URL configuration for nhl_stats_advanced_api project.
+URL configuration for config project.
 
 The `urlpatterns` list routes URLs to views. For more information please see:
     https://docs.djangoproject.com/en/4.2/topics/http/urls/
@@ -18,6 +18,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 urlpatterns = [
+    path("api/", include("api.urls")),
     path("players/", include("players.urls")),
     path("events/", include("events.urls")),
     path("games/", include("games.urls")),
