@@ -1024,58 +1024,45 @@ _RECORD_CATEGORIES = {
 
 
 def records(request: HttpRequest) -> JsonResponse:
+    """Served from mv_records (630 rows total, 7 categories × 3 bands × 30 ranks)."""
+    from django.db import connection
+
     category = request.GET.get("category", "goals")
     if category not in _RECORD_CATEGORIES:
         return HttpResponseBadRequest(f"unknown category {category}")
-    type_desc, role, label = _RECORD_CATEGORIES[category]
-    band = request.GET.get("band", "all")  # all | hof | active
+    band = request.GET.get("band", "all")
+    if band not in ("all", "hof", "active"):
+        return HttpResponseBadRequest(f"unknown band {band}")
 
-    qs = Event.objects.filter(type_desc=type_desc).values(
-        role,
-        f"{role}__first_name",
-        f"{role}__last_name",
-        f"{role}__position",
-        f"{role}__is_active",
-        f"{role}__in_hhof",
-    ).annotate(n=Count("id")).order_by("-n")
-
-    if band == "hof":
-        qs = qs.filter(**{f"{role}__in_hhof": True})
-    elif band == "active":
-        qs = qs.filter(**{f"{role}__is_active": True})
-
-    rows = list(qs[:30])
-
-    # career span (min/max season) per top-N
-    ids = [r[role] for r in rows if r[role]]
-    spans = {
-        r["primary_player"]: (r["start"], r["end"])
-        for r in Event.objects.filter(primary_player_id__in=ids)
-        .values("primary_player")
-        .annotate(start=Min("game__season"), end=Max("game__season"))
-    }
-
-    leaderboard = []
-    for i, r in enumerate(rows):
-        pid = r[role]
-        if not pid:
-            continue
-        start_season, end_season = spans.get(pid, (None, None))
-        leaderboard.append(
-            {
-                "rank": i + 1,
-                "id": pid,
-                "first_name": r[f"{role}__first_name"],
-                "last_name": r[f"{role}__last_name"],
-                "position": r[f"{role}__position"],
-                "active": r[f"{role}__is_active"],
-                "hhof": r[f"{role}__in_hhof"],
-                "value": r["n"],
-                "start_year": _season_year(start_season) if start_season else None,
-                "end_year": _season_year(end_season) + 1 if end_season else None,
-            }
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT rank, label, value, player_id, first_name, last_name, position, "
+            "is_active, in_hhof, start_season, end_season "
+            "FROM mv_records WHERE category = %s AND band = %s ORDER BY rank",
+            [category, band],
         )
+        rows = cur.fetchall()
 
+    if not rows:
+        label = _RECORD_CATEGORIES[category][2]
+        return JsonResponse({"category": category, "label": label, "band": band, "leaderboard": []})
+
+    label = rows[0][1]
+    leaderboard = [
+        {
+            "rank": rank,
+            "id": pid,
+            "first_name": fn,
+            "last_name": ln,
+            "position": pos,
+            "active": active,
+            "hhof": hhof,
+            "value": value,
+            "start_year": _season_year(start_s) if start_s else None,
+            "end_year": _season_year(end_s) + 1 if end_s else None,
+        }
+        for rank, _lbl, value, pid, fn, ln, pos, active, hhof, start_s, end_s in rows
+    ]
     return JsonResponse({"category": category, "label": label, "band": band, "leaderboard": leaderboard})
 
 
@@ -1083,41 +1070,33 @@ def records(request: HttpRequest) -> JsonResponse:
 
 
 def records_overview(request: HttpRequest) -> JsonResponse:
-    """Sidebar overview: per-category #1 leader + goal-type breakdown."""
-    leaders = []
-    for category, (type_desc, role, label) in _RECORD_CATEGORIES.items():
-        top = (
-            Event.objects.filter(type_desc=type_desc, **{f"{role}__isnull": False})
-            .values(role)
-            .annotate(n=Count("id"))
-            .order_by("-n")[:1]
-        )
-        top = list(top)
-        if not top:
-            continue
-        pid = top[0][role]
-        n = top[0]["n"]
-        try:
-            p = Player.objects.get(nhl_api_id=pid)
-            player_brief = _player_brief(p)
-        except Player.DoesNotExist:
-            player_brief = None
-        leaders.append(
-            {
-                "category": category,
-                "label": label,
-                "player": player_brief,
-                "value": n,
-            }
-        )
+    """Sidebar overview: per-category #1 leader + goal-type breakdown.
+    Served from mv_records (rank=1, band=all) + mv_goal_types."""
+    from django.db import connection
 
-    goal_type_rows = (
-        Event.objects.filter(type_desc=Event.GOAL, shot_type__isnull=False)
-        .values("shot_type")
-        .annotate(n=Count("id"))
-        .order_by("-n")
-    )
-    goal_types = [{"shot_type": r["shot_type"], "count": r["n"]} for r in goal_type_rows]
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT category, label, player_id, value FROM mv_records "
+            "WHERE band = 'all' AND rank = 1"
+        )
+        top_rows = cur.fetchall()
+
+        cur.execute("SELECT shot_type, n FROM mv_goal_types ORDER BY n DESC")
+        goal_types = [{"shot_type": st, "count": n} for st, n in cur.fetchall()]
+
+    # _player_brief needs the full Player row — bulk-fetch the 7 leaders in one query
+    pids = [r[2] for r in top_rows if r[2]]
+    players_by_id = {p.nhl_api_id: p for p in Player.objects.filter(nhl_api_id__in=pids)}
+
+    leaders = []
+    for category, label, pid, n in top_rows:
+        p = players_by_id.get(pid)
+        leaders.append({
+            "category": category,
+            "label": label,
+            "player": _player_brief(p) if p else None,
+            "value": n,
+        })
 
     return JsonResponse({"leaders": leaders, "goal_types": goal_types})
 
@@ -1261,83 +1240,32 @@ def _bin(x: int | None, y: int | None, size: int) -> tuple[int, int] | None:
 
 
 def rink_lab(request: HttpRequest) -> JsonResponse:
+    """Served from mv_rink_bins / mv_rink_distance / mv_rink_decade."""
+    from django.db import connection
+
     bin_size = int(request.GET.get("bin", "4"))
-    era = request.GET.get("era", "modern")  # modern (2005+), all
-    qs = Event.objects.filter(
-        type_desc__in=[Event.SHOT_ON_GOAL, Event.GOAL],
-        coord_x__isnull=False,
-        coord_y__isnull=False,
-    )
-    if era == "modern":
-        qs = qs.filter(game__season__gte=20052006)
+    era = request.GET.get("era", "modern")
+    if bin_size not in (2, 4, 8) or era not in ("modern", "all"):
+        return HttpResponseBadRequest("invalid bin or era")
 
-    # We have ~1.16M shots — too many to fetch each row.
-    # SQL-level binning via integer division.
-    rows = qs.extra(
-        select={
-            "bx": f"(coord_x / {bin_size}) * {bin_size}",
-            "by": f"(coord_y / {bin_size}) * {bin_size}",
-        }
-    ).values("bx", "by").annotate(
-        n=Count("id"),
-        g=Count("id", filter=Q(type_desc=Event.GOAL)),
-    ).order_by("-n")[:1200]
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT bx, by, n, g FROM mv_rink_bins "
+            "WHERE bin_size = %s AND era = %s ORDER BY n DESC",
+            [bin_size, era],
+        )
+        bins = [{"x": bx, "y": by, "n": n, "g": g} for bx, by, n, g in cur.fetchall()]
 
-    bins = [{"x": r["bx"], "y": r["by"], "n": r["n"], "g": r["g"]} for r in rows]
+        cur.execute("SELECT bin_ft, shots, goals FROM mv_rink_distance ORDER BY bin_ft")
+        dist_histogram = [
+            {"bin_ft": bft, "shots": shots, "goals": goals}
+            for bft, shots, goals in cur.fetchall()
+        ]
 
-    # ── distance-from-net histogram (10ft bins, 0..80+) ───────────────────────
-    # Distance from nearer net at (±89, 0) — limit to offensive-zone shots in modern era.
-    dist_qs = Event.objects.filter(
-        type_desc__in=[Event.SHOT_ON_GOAL, Event.GOAL],
-        coord_x__isnull=False,
-        coord_y__isnull=False,
-        zone_code="O",
-        game__season__gte=20052006,
-    )
-    # SQL-side distance bin: floor(sqrt((89 - abs(x))^2 + y^2) / 10) * 10, capped at 80
-    dist_rows = dist_qs.extra(
-        select={
-            "dbin": (
-                "CASE WHEN (CAST(SQRT(POWER(89 - ABS(coord_x), 2) + POWER(coord_y, 2)) AS INTEGER) / 10) * 10 > 80 "
-                "THEN 80 "
-                "ELSE (CAST(SQRT(POWER(89 - ABS(coord_x), 2) + POWER(coord_y, 2)) AS INTEGER) / 10) * 10 END"
-            )
-        }
-    ).values("dbin").annotate(
-        shots=Count("id"),
-        goals=Count("id", filter=Q(type_desc=Event.GOAL)),
-    ).order_by("dbin")
-    dist_map = {r["dbin"]: r for r in dist_rows}
-    dist_histogram = []
-    for bft in [0, 10, 20, 30, 40, 50, 60, 70, 80]:
-        r = dist_map.get(bft)
-        dist_histogram.append({
-            "bin_ft": bft,
-            "shots": r["shots"] if r else 0,
-            "goals": r["goals"] if r else 0,
-        })
-
-    # ── decade histogram of goals ─────────────────────────────────────────────
-    decade_rows = (
-        Event.objects.filter(type_desc=Event.GOAL)
-        .extra(select={"decade": "((season / 10000) / 10) * 10"})
-        .values("decade")
-        .annotate(goals=Count("id"))
-        .order_by("decade")
-    )
-    # season lives on game, not event — need to join via game__season:
-    decade_rows = (
-        Event.objects.filter(type_desc=Event.GOAL, game__season__isnull=False)
-        .extra(select={"decade": "((games_game.season / 10000) / 10) * 10"})
-        .values("decade")
-        .annotate(goals=Count("id"))
-        .order_by("decade")
-    )
-    decade_histogram = [
-        {"decade": r["decade"], "goals": r["goals"]}
-        for r in decade_rows
-        if r["decade"] is not None
-    ]
+        cur.execute("SELECT decade, goals FROM mv_rink_decade ORDER BY decade")
+        decade_histogram = [
+            {"decade": d, "goals": g} for d, g in cur.fetchall() if d is not None
+        ]
 
     return JsonResponse({
         "bins": bins,
@@ -1442,149 +1370,73 @@ _ERAS = [
 
 
 def eras(request: HttpRequest) -> JsonResponse:
-    # season-by-season G/GP curve
-    season_rows = (
-        Game.objects.filter(game_type=2)
-        .values("season")
-        .annotate(
-            games=Count("id"),
-            goals=Sum(F("home_score") + F("away_score")),
+    """All data served from MVs refreshed nightly by refresh_landing_mvs.
+    See ingest/migrations/0002_mvs_eras_rinklab_records.py."""
+    from django.db import connection
+
+    with connection.cursor() as cur:
+        cur.execute("SELECT season, year, games, gpg FROM mv_eras_curve ORDER BY season")
+        curve = [
+            {"season": s, "year": y, "games": g, "gpg": gpg}
+            for s, y, g, gpg in cur.fetchall()
+        ]
+
+        cur.execute(
+            "SELECT label, year_start, year_end, gpg, games, accent, hero_name, hero_goals, "
+            "hero_id, description FROM mv_eras_cards ORDER BY ord"
         )
-        .order_by("season")
-    )
-    curve = [
-        {
-            "season": r["season"],
-            "year": _season_year(r["season"]),
-            "games": r["games"],
-            "gpg": round((r["goals"] or 0) / r["games"], 2) if r["games"] else 0.0,
-        }
-        for r in season_rows
-    ]
-
-    # Era cards
-    era_cards = []
-    for e in _ERAS:
-        rows = [r for r in curve if e["from"] <= r["season"] <= e["to"]]
-        if not rows:
-            continue
-        total_games = sum(r["games"] for r in rows)
-        total_goals = sum(int(r["gpg"] * r["games"]) for r in rows)
-        gpg = round(total_goals / total_games, 2) if total_games else 0.0
-
-        # Hero: top goal scorer in this era
-        hero_row = (
-            Event.objects.filter(
-                type_desc=Event.GOAL,
-                game__season__gte=e["from"],
-                game__season__lte=e["to"],
-                primary_player__isnull=False,
-            )
-            .values(
-                "primary_player",
-                "primary_player__first_name",
-                "primary_player__last_name",
-                "primary_player__full_name",
-            )
-            .annotate(n=Count("id"))
-            .order_by("-n")
-            .first()
-        )
-        if hero_row:
-            hero_name = hero_row.get("primary_player__full_name") or (
-                f"{hero_row['primary_player__first_name']} {hero_row['primary_player__last_name']}"
-            )
-            hero_goals = hero_row["n"]
-            hero_id = hero_row["primary_player"]
-        else:
-            hero_name = None
-            hero_goals = None
-            hero_id = None
-
-        era_cards.append(
-            {
-                "label": e["label"],
-                "year_start": _season_year(e["from"]),
-                "year_end": _season_year(e["to"]) if e["to"] < 20992100 else _season_year(rows[-1]["season"]),
+        era_cards = []
+        for label, ys, ye, gpg, games, accent, hero_name, hero_goals, hero_id, desc in cur.fetchall():
+            era_cards.append({
+                "label": label,
+                "year_start": ys,
+                "year_end": ye,
                 "gpg": gpg,
-                "games": total_games,
-                "accent": e["accent"],
+                "games": int(games) if games is not None else 0,
+                "accent": accent,
                 "hero": hero_name,
                 "hero_goals": hero_goals,
                 "hero_id": hero_id,
-                "description": e.get("description", ""),
-            }
-        )
+                "description": desc,
+            })
 
-    # Spatial drift — sample shot coord distance to nearer net per era (3 snapshots)
-    snapshots = [(1994, 19941995), (2009, 20092010), (2024, 20242025)]
-    drift = []
-    for year, season in snapshots:
-        bin_size = 4
-        qs = Event.objects.filter(
-            type_desc__in=[Event.SHOT_ON_GOAL, Event.GOAL],
-            coord_x__isnull=False,
-            coord_y__isnull=False,
-            game__season=season,
+        cur.execute(
+            "SELECT year, season, bx, by, n FROM mv_eras_drift ORDER BY year, n DESC"
         )
-        rows = qs.extra(
-            select={
-                "bx": f"(coord_x / {bin_size}) * {bin_size}",
-                "by": f"(coord_y / {bin_size}) * {bin_size}",
-            }
-        ).values("bx", "by").annotate(n=Count("id")).order_by("-n")[:300]
-        drift.append(
-            {
+        drift_by_year: dict[int, dict[str, Any]] = {}
+        for year, season, bx, by, n in cur.fetchall():
+            d = drift_by_year.setdefault(year, {
                 "year": year,
                 "season_label": _season_label(season),
-                "bins": [{"x": r["bx"], "y": r["by"], "n": r["n"]} for r in rows],
-            }
-        )
+                "bins": [],
+            })
+            d["bins"].append({"x": bx, "y": by, "n": n})
+        # Always emit all 3 snapshot years (pre-2005 seasons have no shot coords
+        # so the MV may be empty for them — preserve the empty-bins shape the
+        # frontend expects).
+        _DRIFT_SNAPSHOTS = [(1994, 19941995), (2009, 20092010), (2024, 20242025)]
+        drift = [
+            drift_by_year.get(year, {"year": year, "season_label": _season_label(season), "bins": []})
+            for year, season in _DRIFT_SNAPSHOTS
+        ]
 
-    # Peak seasons per decade — top point-scoring season per decade band
-    # (proxy: top goals season per decade band, joined w/ assists)
-    peaks = []
-    decade_bands = [
-        (1970, 19701971, 19791980),
-        (1980, 19801981, 19891990),
-        (1990, 19901991, 19992000),
-        (2000, 20002001, 20092010),
-        (2020, 20202021, 20992100),
-    ]
-    for label, lo, hi in decade_bands:
-        top = (
-            Event.objects.filter(type_desc=Event.GOAL, game__season__gte=lo, game__season__lt=hi)
-            .values(
-                "primary_player",
-                "primary_player__first_name",
-                "primary_player__last_name",
-                "game__season",
-            )
-            .annotate(g=Count("id"))
-            .order_by("-g")
-            .first()
+        cur.execute(
+            "SELECT decade, season, first_name, last_name, player_id, goals, assists "
+            "FROM mv_eras_peaks ORDER BY decade"
         )
-        if not top:
-            continue
-        pid = top["primary_player"]
-        season = top["game__season"]
-        # add assists for same player in same season
-        a1 = Event.objects.filter(secondary_player_id=pid, type_desc=Event.GOAL, game__season=season).count()
-        a2 = Event.objects.filter(tertiary_player_id=pid, type_desc=Event.GOAL, game__season=season).count()
-        peaks.append(
-            {
-                "decade": label,
+        peaks = []
+        for decade, season, fn, ln, pid, goals, assists in cur.fetchall():
+            peaks.append({
+                "decade": decade,
                 "season": _season_label(season),
-                "first_name": top["primary_player__first_name"],
-                "last_name": top["primary_player__last_name"],
+                "first_name": fn,
+                "last_name": ln,
                 "id": pid,
-                "goals": top["g"],
-                "assists": a1 + a2,
-                "points": top["g"] + a1 + a2,
-            }
-        )
+                "goals": goals,
+                "assists": assists,
+                "points": goals + assists,
+            })
 
-    # Peak / trough of the G/GP curve
     if curve:
         peak = max(curve, key=lambda r: r["gpg"])
         trough = min((r for r in curve if r["gpg"] > 0), key=lambda r: r["gpg"])

@@ -14,7 +14,24 @@ import time
 from django.core.management.base import BaseCommand
 from django.db import connection
 
-MVS = ["mv_ledger", "mv_era_buckets", "mv_site_counts"]
+MVS = [
+    # landing
+    "mv_ledger",
+    "mv_era_buckets",
+    "mv_site_counts",
+    # eras  (mv_eras_cards depends on mv_eras_curve being current — refresh in this order)
+    "mv_eras_curve",
+    "mv_eras_cards",
+    "mv_eras_drift",
+    "mv_eras_peaks",
+    # rink-lab
+    "mv_rink_bins",
+    "mv_rink_distance",
+    "mv_rink_decade",
+    # records
+    "mv_records",
+    "mv_goal_types",
+]
 
 
 class Command(BaseCommand):
