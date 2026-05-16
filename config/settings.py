@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "players.apps.PlayersConfig",
     "events.apps.EventsConfig",
     "games.apps.GamesConfig",
+    "ingest.apps.IngestConfig",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",

@@ -67,33 +67,27 @@ def _season_year(season: int) -> int:
 
 
 def landing(request: HttpRequest) -> JsonResponse:
-    total_events = Event.objects.count()
-    total_games = Game.objects.count()
-    total_players = Player.objects.count()
-    shots_with_coords = Event.objects.filter(
-        type_desc__in=[Event.SHOT_ON_GOAL, Event.GOAL, Event.MISSED_SHOT, Event.BLOCKED_SHOT],
-        coord_x__isnull=False,
-    ).count()
-    total_seasons = Game.objects.values("season").distinct().count()
-    hhof = Player.objects.filter(in_hhof=True).count()
-    active = Player.objects.filter(is_active=True).count()
+    # Counts + era buckets + ledger come from materialized views refreshed
+    # nightly by `manage.py refresh_landing_mvs`. See ingest/migrations/0001.
+    from django.db import connection
 
-    # era buckets — group seasons into the 8 buckets the design wants
-    era_bounds = [
-        ("1917-29", 19171918, 19291930),
-        ("1930-49", 19301931, 19491950),
-        ("1950-69", 19501951, 19691970),
-        ("1970-89", 19701971, 19891990),
-        ("1990-99", 19901991, 19991999),
-        ("2000-09", 20001999, 20091999),  # season encoding sorts numerically
-        ("2010-19", 20101999, 20191999),
-        ("2020-26", 20201999, 20991999),
-    ]
-    era_buckets = []
-    for label, lo, hi in era_bounds:
-        events = Event.objects.filter(game__season__gte=lo, game__season__lte=hi).count()
-        games = Game.objects.filter(season__gte=lo, season__lte=hi).count()
-        era_buckets.append({"era": label, "events": events, "games": games})
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT total_events, total_games, total_players, shots_with_coords, "
+            "total_seasons, hhof, active FROM mv_site_counts"
+        )
+        (
+            total_events,
+            total_games,
+            total_players,
+            shots_with_coords,
+            total_seasons,
+            hhof,
+            active,
+        ) = cur.fetchone()
+
+        cur.execute("SELECT era, events, games FROM mv_era_buckets ORDER BY ord")
+        era_buckets = [{"era": e, "events": ev, "games": g} for e, ev, g in cur.fetchall()]
 
     # tonight — games today, or fall back to the most recent gameday
     today = date.today()
@@ -126,88 +120,100 @@ def landing(request: HttpRequest) -> JsonResponse:
         for g in tonight_qs
     ]
 
-    # current-season scoring leaders (most recent season we have)
+    # current-season scoring leaders — single CTE replaces the 21-query N+1.
+    # Team is inferred from score-delta on the player's most recent goal this
+    # season (events_event has no team FK).
     current_season = Game.objects.aggregate(s=Max("season"))["s"] or 0
-    leaders_qs = (
-        Event.objects.filter(type_desc=Event.GOAL, game__season=current_season)
-        .values(
-            "primary_player",
-            "primary_player__first_name",
-            "primary_player__last_name",
-            "primary_player__sweater_number",
-        )
-        .annotate(goals=Count("id"))
-        .order_by("-goals")[:10]
-    )
-    # need team — infer from score delta on the player's most recent goal this season
-    leaders = []
-    for row in leaders_qs:
-        pid = row["primary_player"]
-        if not pid:
-            continue
-        last_goal = (
-            Event.objects.filter(primary_player_id=pid, type_desc=Event.GOAL, game__season=current_season)
-            .select_related("game")
-            .order_by("-game__game_date", "-period", "-period_time")
-            .first()
-        )
-        team = "—"
-        if last_goal and last_goal.game_id:
-            g = last_goal.game
-            # Find the event immediately prior in the same game to compare scores
-            prev = (
-                Event.objects.filter(game=g)
-                .filter(
-                    Q(period__lt=last_goal.period)
-                    | Q(period=last_goal.period, period_time__lt=last_goal.period_time)
-                )
-                .order_by("-period", "-period_time")
-                .values("home_score", "away_score")
-                .first()
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            WITH season_goals AS (
+                SELECT e.primary_player_id, e.game_id, e.period, e.period_time,
+                       e.home_score, e.away_score, g.game_date
+                FROM events_event e
+                JOIN games_game g ON g.id = e.game_id
+                WHERE e.type_desc = 'goal'
+                  AND g.season = %s
+                  AND e.primary_player_id IS NOT NULL
+            ),
+            goal_counts AS (
+                SELECT primary_player_id, COUNT(*) AS goals
+                FROM season_goals
+                GROUP BY primary_player_id
+                ORDER BY goals DESC
+                LIMIT 10
+            ),
+            last_goal AS (
+                SELECT sg.*
+                FROM (
+                    SELECT sg.*,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY sg.primary_player_id
+                               ORDER BY sg.game_date DESC, sg.period DESC, sg.period_time DESC
+                           ) AS rn
+                    FROM season_goals sg
+                    JOIN goal_counts gc ON gc.primary_player_id = sg.primary_player_id
+                ) sg
+                WHERE rn = 1
+            ),
+            with_prev AS (
+                SELECT lg.primary_player_id, lg.game_id, lg.home_score, lg.away_score,
+                       (SELECT e2.home_score FROM events_event e2
+                        WHERE e2.game_id = lg.game_id
+                          AND (e2.period < lg.period
+                               OR (e2.period = lg.period AND e2.period_time < lg.period_time))
+                        ORDER BY e2.period DESC, e2.period_time DESC LIMIT 1) AS prev_home,
+                       (SELECT e2.away_score FROM events_event e2
+                        WHERE e2.game_id = lg.game_id
+                          AND (e2.period < lg.period
+                               OR (e2.period = lg.period AND e2.period_time < lg.period_time))
+                        ORDER BY e2.period DESC, e2.period_time DESC LIMIT 1) AS prev_away
+                FROM last_goal lg
             )
-            prev_h = (prev or {}).get("home_score") or 0
-            prev_a = (prev or {}).get("away_score") or 0
-            if last_goal.home_score is not None and last_goal.home_score > prev_h:
-                team = g.home_team
-            elif last_goal.away_score is not None and last_goal.away_score > prev_a:
-                team = g.away_team
-            else:
-                team = g.home_team  # last-resort fallback
-        leaders.append(
-            {
-                "id": pid,
-                "first_name": row["primary_player__first_name"],
-                "last_name": row["primary_player__last_name"],
-                "team": team,
-                "goals": row["goals"],
-            }
+            SELECT gc.primary_player_id, gc.goals,
+                   p.first_name, p.last_name,
+                   g.home_team, g.away_team,
+                   wp.home_score, wp.away_score,
+                   COALESCE(wp.prev_home, 0), COALESCE(wp.prev_away, 0)
+            FROM goal_counts gc
+            JOIN with_prev wp ON wp.primary_player_id = gc.primary_player_id
+            JOIN players_player p ON p.nhl_api_id = gc.primary_player_id
+            JOIN games_game g ON g.id = wp.game_id
+            ORDER BY gc.goals DESC
+            """,
+            [current_season],
         )
+        rows = cur.fetchall()
 
-    # ledger — top in 4 metrics
-    def _top1(qs, label):
-        row = qs.values(
-            "primary_player",
-            "primary_player__first_name",
-            "primary_player__last_name",
-            "primary_player__is_active",
-        ).annotate(n=Count("id")).order_by("-n").first()
-        if not row:
-            return None
-        return {
-            "metric": label,
-            "id": row["primary_player"],
-            "first_name": row["primary_player__first_name"],
-            "last_name": row["primary_player__last_name"],
-            "value": row["n"],
-            "active": row["primary_player__is_active"],
+    leaders = []
+    for pid, goals, fn, ln, home_team, away_team, h_score, a_score, prev_h, prev_a in rows:
+        if h_score is not None and h_score > prev_h:
+            team = home_team
+        elif a_score is not None and a_score > prev_a:
+            team = away_team
+        else:
+            team = home_team
+        leaders.append({"id": pid, "first_name": fn, "last_name": ln, "team": team, "goals": goals})
+
+    # ledger — top in 4 metrics, from mv_ledger
+    _LEDGER_ORDER = ["goal", "faceoff", "hit", "blocked-shot"]
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT type_desc, metric, player_id, first_name, last_name, value, is_active "
+            "FROM mv_ledger"
+        )
+        by_type = {
+            row[0]: {
+                "metric": row[1],
+                "id": row[2],
+                "first_name": row[3],
+                "last_name": row[4],
+                "value": row[5],
+                "active": row[6],
+            }
+            for row in cur.fetchall()
         }
-
-    ledger = [
-        _top1(Event.objects.filter(type_desc=Event.GOAL), "Career goals"),
-        _top1(Event.objects.filter(type_desc=Event.FACEOFF), "Career faceoffs won"),
-        _top1(Event.objects.filter(type_desc=Event.HIT), "Career hits delivered"),
-        _top1(Event.objects.filter(type_desc=Event.BLOCKED_SHOT), "Career shot blocks"),
-    ]
+    ledger = [by_type.get(t) for t in _LEDGER_ORDER]
 
     return JsonResponse(
         {
